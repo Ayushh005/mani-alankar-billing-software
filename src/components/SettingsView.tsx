@@ -33,8 +33,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const [formData, setFormData] = useState<ShopSettings>(() => {
     const list = settings.authorizedGmails && settings.authorizedGmails.length > 0
-      ? Array.from(new Set(['manialankar3@gmail.com', ...settings.authorizedGmails]))
-      : ['manialankar3@gmail.com'];
+      ? Array.from(new Set(['manialankar3@gmail.com', 'ayushofficial2323@gmail.com', ...settings.authorizedGmails]))
+      : ['manialankar3@gmail.com', 'ayushofficial2323@gmail.com'];
     return {
       ...settings,
       authorizedGmail: 'manialankar3@gmail.com',
@@ -42,8 +42,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     };
   });
 
+  // Keep formData in sync if settings update from cloud
+  React.useEffect(() => {
+    const list = settings.authorizedGmails && settings.authorizedGmails.length > 0
+      ? Array.from(new Set(['manialankar3@gmail.com', 'ayushofficial2323@gmail.com', ...settings.authorizedGmails]))
+      : ['manialankar3@gmail.com', 'ayushofficial2323@gmail.com'];
+    setFormData(prev => ({
+      ...prev,
+      ...settings,
+      authorizedGmail: 'manialankar3@gmail.com',
+      authorizedGmails: list
+    }));
+  }, [settings]);
+
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [newEmailInput, setNewEmailInput] = useState<string>('');
+  const [emailSyncAlert, setEmailSyncAlert] = useState<string | null>(null);
   
   // Cloud Sync State
   const [cloudSyncMsg, setCloudSyncMsg] = useState<string | null>(null);
@@ -51,6 +65,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleChange = (field: keyof ShopSettings, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddEmail = (emailToAdd: string) => {
+    const clean = emailToAdd.trim().toLowerCase();
+    if (!clean || !clean.includes('@') || !clean.includes('.')) {
+      alert('Please enter a valid Gmail address (e.g. staff@gmail.com)');
+      return;
+    }
+    const current = formData.authorizedGmails || ['manialankar3@gmail.com', 'ayushofficial2323@gmail.com'];
+    if (current.map(e => e.toLowerCase()).includes(clean)) {
+      alert(`"${clean}" is already in the authorized whitelist.`);
+      return;
+    }
+    const updated = [...current, clean];
+    const updatedSettings: ShopSettings = { ...formData, authorizedGmails: updated };
+    setFormData(updatedSettings);
+    // Instant sync to Firebase Cloud Firestore and LocalStorage
+    onSaveSettings(updatedSettings);
+    setNewEmailInput('');
+    setEmailSyncAlert(`✓ "${clean}" successfully added and synced to Firebase Cloud! Staff can now log in from any phone or PC.`);
+    setTimeout(() => setEmailSyncAlert(null), 6000);
+  };
+
+  const handleRemoveEmail = (emailToRemove: string) => {
+    const updated = (formData.authorizedGmails || []).filter(e => e.toLowerCase() !== emailToRemove.toLowerCase());
+    const updatedSettings: ShopSettings = { ...formData, authorizedGmails: updated };
+    setFormData(updatedSettings);
+    // Instant sync to Firebase Cloud Firestore and LocalStorage
+    onSaveSettings(updatedSettings);
+    setEmailSyncAlert(`"${emailToRemove}" access revoked from whitelist and Firebase Cloud.`);
+    setTimeout(() => setEmailSyncAlert(null), 5000);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -252,10 +297,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        const updated = (formData.authorizedGmails || []).filter(e => e.toLowerCase() !== email.toLowerCase());
-                        handleChange('authorizedGmails', updated);
-                      }}
+                      onClick={() => handleRemoveEmail(email)}
                       style={{
                         background: 'transparent',
                         border: 'none',
@@ -267,6 +309,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         fontSize: '0.75rem',
                         fontWeight: 700
                       }}
+                      title="Revoke access"
                     >
                       <Trash2 size={13} /> Remove
                     </button>
@@ -281,30 +324,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     placeholder="Add staff / family Gmail (e.g. staff@gmail.com)"
                     value={newEmailInput}
                     onChange={(e) => setNewEmailInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddEmail(newEmailInput);
+                      }
+                    }}
                     style={{ flex: 1, fontSize: '0.85rem' }}
                   />
                   <button
                     type="button"
                     className="btn-royal-primary btn-sm"
-                    onClick={() => {
-                      const clean = newEmailInput.trim().toLowerCase();
-                      if (!clean || !clean.includes('@') || !clean.includes('.')) {
-                        alert('Please enter a valid Gmail address');
-                        return;
-                      }
-                      const current = formData.authorizedGmails || ['manialankar3@gmail.com'];
-                      if (current.map(e => e.toLowerCase()).includes(clean)) {
-                        alert(`"${clean}" is already in the authorized whitelist.`);
-                        return;
-                      }
-                      const updated = [...current, clean];
-                      handleChange('authorizedGmails', updated);
-                      setNewEmailInput('');
-                    }}
+                    onClick={() => handleAddEmail(newEmailInput)}
                   >
                     <Plus size={14} /> Add to Whitelist
                   </button>
                 </div>
+
+                {/* Live confirmation alert for instant cloud sync */}
+                {emailSyncAlert && (
+                  <div style={{
+                    marginTop: '0.65rem',
+                    padding: '0.55rem 0.85rem',
+                    background: '#ecfdf5',
+                    border: '1px solid #86efac',
+                    borderRadius: '6px',
+                    color: '#15803d',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem'
+                  }}>
+                    <CheckCircle2 size={15} />
+                    <span>{emailSyncAlert}</span>
+                  </div>
+                )}
               </div>
             </div>
 
