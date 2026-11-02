@@ -16,7 +16,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   alternatePhone: '+91 94140 67890',
   email: 'manialankar3@gmail.com',
   authorizedGmail: 'manialankar3@gmail.com',
-  authorizedGmails: ['manialankar3@gmail.com'],
+  authorizedGmails: ['manialankar3@gmail.com', 'ayushofficial2323@gmail.com'],
   gstin: '08ABCDE1234F1Z5',
   pan: 'ABCDE1234F',
   bisHallmarkLicense: 'HM/C-8921045620',
@@ -283,8 +283,8 @@ export const getShopSettings = (): ShopSettings => {
     if (raw) {
       const parsed = JSON.parse(raw);
       const authorizedGmails = Array.isArray(parsed.authorizedGmails) && parsed.authorizedGmails.length > 0
-        ? Array.from(new Set(['manialankar3@gmail.com', ...parsed.authorizedGmails.map((e: string) => e.trim().toLowerCase())]))
-        : ['manialankar3@gmail.com'];
+        ? Array.from(new Set(['manialankar3@gmail.com', 'ayushofficial2323@gmail.com', ...parsed.authorizedGmails.map((e: string) => e.trim().toLowerCase())]))
+        : ['manialankar3@gmail.com', 'ayushofficial2323@gmail.com'];
       return { 
         ...DEFAULT_SETTINGS, 
         ...parsed, 

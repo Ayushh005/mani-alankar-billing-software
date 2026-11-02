@@ -17,7 +17,8 @@ import {
   syncInvoiceToCloud, 
   syncSettingsToCloud, 
   syncRatesToCloud, 
-  subscribeToCloudInvoices 
+  subscribeToCloudInvoices,
+  fetchSettingsFromCloud
 } from './firebase';
 
 import { Sidebar } from './components/Sidebar';
@@ -79,6 +80,19 @@ export const App: React.FC = () => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  // Sync settings and whitelist from cloud on mount/login
+  useEffect(() => {
+    fetchSettingsFromCloud().then((cloudSettings) => {
+      if (cloudSettings) {
+        setSettings(prev => {
+          const merged = { ...prev, ...cloudSettings };
+          saveShopSettings(merged);
+          return merged;
+        });
+      }
+    }).catch(err => console.warn('Cloud settings fetch notice:', err));
+  }, [currentUser]);
 
   // Authentication Handlers
   const handleLoginSuccess = (email: string) => {

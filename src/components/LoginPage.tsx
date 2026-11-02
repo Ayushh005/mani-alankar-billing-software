@@ -9,7 +9,8 @@ import {
   Sparkles
 } from 'lucide-react';
 import { ShopSettings } from '../types';
-import { signInWithGoogle, signOutGoogle } from '../firebase';
+import { signInWithGoogle, signOutGoogle, fetchSettingsFromCloud } from '../firebase';
+import { saveShopSettings } from '../utils/storage';
 
 interface LoginPageProps {
   settings: ShopSettings;
@@ -27,6 +28,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   // Whitelist: permanent primary owner + all added staff/family emails from settings
   const authorizedEmails: string[] = Array.from(new Set([
     primaryOwnerEmail,
+    'ayushofficial2323@gmail.com',
     ...(settings.authorizedGmails || []),
     settings.authorizedGmail || '',
     settings.email || ''
@@ -51,8 +53,35 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
       const verifiedEmail = (res.email || '').toLowerCase().trim();
 
-      // Check against the private whitelist
-      if (authorizedEmails.includes(verifiedEmail)) {
+      // 1. Check local whitelist first
+      let isAllowed = authorizedEmails.includes(verifiedEmail);
+
+      // 2. If not found in local browser storage, fetch live settings from Cloud Firestore (for phones & new devices)
+      if (!isAllowed) {
+        try {
+          const cloudSettings = await fetchSettingsFromCloud();
+          if (cloudSettings) {
+            const cloudEmails: string[] = Array.from(new Set([
+              primaryOwnerEmail,
+              'ayushofficial2323@gmail.com',
+              ...(cloudSettings.authorizedGmails || []),
+              cloudSettings.authorizedGmail || '',
+              cloudSettings.email || ''
+            ])).map(e => e.trim().toLowerCase()).filter(Boolean);
+
+            if (cloudEmails.includes(verifiedEmail)) {
+              isAllowed = true;
+              // Save cloud settings locally on this phone
+              saveShopSettings(cloudSettings);
+              onUpdateAuthorizedGmail(verifiedEmail);
+            }
+          }
+        } catch (fetchErr) {
+          console.warn('Could not verify against cloud settings:', fetchErr);
+        }
+      }
+
+      if (isAllowed) {
         localStorage.setItem('mani_alankar_auth_user', verifiedEmail);
         onLoginSuccess(verifiedEmail);
       } else {
