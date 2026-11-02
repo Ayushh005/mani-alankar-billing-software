@@ -240,7 +240,9 @@ export const syncSettingsToCloud = async (settings: ShopSettings): Promise<boole
 
   try {
     const ref = doc(db, 'settings', 'shop_profile');
-    await setDoc(ref, settings, { merge: true });
+    // Sanitize to clean any undefined fields that cause Firestore setDoc to fail
+    const cleanSettings = JSON.parse(JSON.stringify(settings));
+    await setDoc(ref, cleanSettings, { merge: true });
     return true;
   } catch (err) {
     console.error('Failed to sync settings to cloud:', err);
@@ -262,6 +264,29 @@ export const fetchSettingsFromCloud = async (): Promise<ShopSettings | null> => 
     return null;
   } catch (err) {
     console.error('Failed to fetch settings from cloud:', err);
+    return null;
+  }
+};
+
+// 6b. Real-time Shop Settings & Whitelist Subscription
+export const subscribeToCloudSettings = (
+  onData: (settings: ShopSettings) => void
+): (() => void) | null => {
+  const { db } = getFirebaseInstance();
+  if (!db) return null;
+
+  try {
+    const ref = doc(db, 'settings', 'shop_profile');
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        onData(snap.data() as ShopSettings);
+      }
+    }, (err) => {
+      console.warn('Real-time settings snapshot notice:', err);
+    });
+    return unsubscribe;
+  } catch (err) {
+    console.error('Failed to subscribe to cloud settings:', err);
     return null;
   }
 };

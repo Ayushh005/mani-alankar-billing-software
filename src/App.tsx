@@ -18,7 +18,8 @@ import {
   syncSettingsToCloud, 
   syncRatesToCloud, 
   subscribeToCloudInvoices,
-  fetchSettingsFromCloud
+  fetchSettingsFromCloud,
+  subscribeToCloudSettings
 } from './firebase';
 
 import { Sidebar } from './components/Sidebar';
@@ -81,7 +82,24 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Sync settings and whitelist from cloud on mount/login
+  // Real-time Cloud Settings & Whitelist Subscription
+  useEffect(() => {
+    const unsubscribe = subscribeToCloudSettings((cloudSettings) => {
+      if (cloudSettings) {
+        setSettings(prev => {
+          const merged = { ...prev, ...cloudSettings };
+          saveShopSettings(merged);
+          return merged;
+        });
+      }
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Sync settings on mount/login
   useEffect(() => {
     fetchSettingsFromCloud().then((cloudSettings) => {
       if (cloudSettings) {
@@ -93,6 +111,23 @@ export const App: React.FC = () => {
       }
     }).catch(err => console.warn('Cloud settings fetch notice:', err));
   }, [currentUser]);
+
+  // Active session security: If currentUser is removed from whitelist by owner, immediately kick/logout!
+  useEffect(() => {
+    if (!currentUser) return;
+    const allowed = Array.from(new Set([
+      'manialankar3@gmail.com',
+      'ayushofficial2323@gmail.com',
+      ...(settings.authorizedGmails || []),
+      settings.authorizedGmail || '',
+      settings.email || ''
+    ])).map(e => e.trim().toLowerCase()).filter(Boolean);
+
+    if (!allowed.includes(currentUser.toLowerCase().trim())) {
+      console.warn(`User ${currentUser} is no longer in the whitelist. Logging out.`);
+      handleLogout();
+    }
+  }, [currentUser, settings.authorizedGmails]);
 
   // Authentication Handlers
   const handleLoginSuccess = (email: string) => {

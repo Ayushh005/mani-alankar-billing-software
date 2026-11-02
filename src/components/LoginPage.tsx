@@ -53,43 +53,41 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
       const verifiedEmail = (res.email || '').toLowerCase().trim();
 
-      // 1. Check local whitelist first
-      let isAllowed = authorizedEmails.includes(verifiedEmail);
+      // Check live Cloud Firestore as the authoritative source across all devices
+      let isAllowed = false;
+      try {
+        const cloudSettings = await fetchSettingsFromCloud();
+        if (cloudSettings) {
+          const cloudEmails: string[] = Array.from(new Set([
+            primaryOwnerEmail,
+            'ayushofficial2323@gmail.com',
+            ...(cloudSettings.authorizedGmails || []),
+            cloudSettings.authorizedGmail || '',
+            cloudSettings.email || ''
+          ])).map(e => e.trim().toLowerCase()).filter(Boolean);
 
-      // 2. If not found in local browser storage, fetch live settings from Cloud Firestore (for phones & new devices)
-      if (!isAllowed) {
-        try {
-          const cloudSettings = await fetchSettingsFromCloud();
-          if (cloudSettings) {
-            const cloudEmails: string[] = Array.from(new Set([
-              primaryOwnerEmail,
-              'ayushofficial2323@gmail.com',
-              ...(cloudSettings.authorizedGmails || []),
-              cloudSettings.authorizedGmail || '',
-              cloudSettings.email || ''
-            ])).map(e => e.trim().toLowerCase()).filter(Boolean);
-
-            if (cloudEmails.includes(verifiedEmail)) {
-              isAllowed = true;
-              // Save cloud settings locally on this phone
-              saveShopSettings(cloudSettings);
-              onUpdateAuthorizedGmail(verifiedEmail);
-            }
-          }
-        } catch (fetchErr) {
-          console.warn('Could not verify against cloud settings:', fetchErr);
+          isAllowed = cloudEmails.includes(verifiedEmail);
+          // Synchronize authoritative cloud settings to local storage
+          saveShopSettings(cloudSettings);
+        } else {
+          // Fallback if cloud settings unreachable
+          isAllowed = authorizedEmails.includes(verifiedEmail);
         }
+      } catch (fetchErr) {
+        console.warn('Could not verify against cloud settings, using local fallback:', fetchErr);
+        isAllowed = authorizedEmails.includes(verifiedEmail);
       }
 
       if (isAllowed) {
         localStorage.setItem('mani_alankar_auth_user', verifiedEmail);
         onLoginSuccess(verifiedEmail);
       } else {
-        // Sign out immediately from Google session
+        // Sign out immediately from Google session and clear any cached user
         await signOutGoogle();
+        localStorage.removeItem('mani_alankar_auth_user');
         setErrorMessage(
           `Access Denied: The Google Account "${verifiedEmail}" is not authorized. ` +
-          `Only registered owners and authorized staff can access Mani Alankar Jewellers billing terminal.`
+          `Only registered owners and active staff in the whitelist can access Mani Alankar Jewellers.`
         );
       }
     } catch (err: any) {
