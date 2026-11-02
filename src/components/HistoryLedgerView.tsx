@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -7,11 +7,14 @@ import {
   Clock, 
   CheckCircle2, 
   AlertCircle, 
-  FileSpreadsheet,
-  Calendar,
-  Eye,
-  ChevronLeft,
-  ChevronRight
+  FileSpreadsheet, 
+  Calendar, 
+  Eye, 
+  ChevronLeft, 
+  ChevronRight,
+  X,
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 import { Invoice, InvoiceStatus } from '../types';
 import { formatCurrency, formatGrams } from '../utils/calculations';
@@ -42,36 +45,113 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(15);
 
-  // Filter invoices
-  const filtered = invoices.filter(inv => {
-    // Search match
+  // Check if any filter is active
+  const isFilterActive = Boolean(searchTerm.trim() || statusFilter !== 'ALL' || startDate || endDate);
+
+  // Clear all filters helper
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('ALL');
+    setStartDate('');
+    setEndDate('');
+    setCurrentPage(1);
+  };
+
+  // Quick preset filter handlers
+  const handleQuickFilter = (type: 'ALL' | 'PENDING' | 'PAID' | 'TODAY' | 'THIS_MONTH') => {
+    const today = new Date().toISOString().slice(0, 10);
+    switch (type) {
+      case 'ALL':
+        handleClearFilters();
+        break;
+      case 'PENDING':
+        setSearchTerm('');
+        setStatusFilter('PARTIAL');
+        setStartDate('');
+        setEndDate('');
+        break;
+      case 'PAID':
+        setSearchTerm('');
+        setStatusFilter('PAID');
+        setStartDate('');
+        setEndDate('');
+        break;
+      case 'TODAY':
+        setStatusFilter('ALL');
+        setStartDate(today);
+        setEndDate(today);
+        break;
+      case 'THIS_MONTH': {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+        setStatusFilter('ALL');
+        setStartDate(firstDay);
+        setEndDate(today);
+        break;
+      }
+    }
+    setCurrentPage(1);
+  };
+
+  // Memoized filter & chronological sort (descending: latest bills first)
+  const filtered = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
-    const matchesSearch = !term || 
-      inv.invoiceNumber.toLowerCase().includes(term) ||
-      inv.customer.name.toLowerCase().includes(term) ||
-      inv.customer.mobile.includes(term) ||
-      inv.customer.city.toLowerCase().includes(term);
+    const result = invoices.filter(inv => {
+      // Search match
+      const matchesSearch = !term || 
+        inv.invoiceNumber.toLowerCase().includes(term) ||
+        inv.customer.name.toLowerCase().includes(term) ||
+        inv.customer.mobile.includes(term) ||
+        inv.customer.city.toLowerCase().includes(term);
 
-    // Status filter
-    const matchesStatus = statusFilter === 'ALL' || inv.status === statusFilter;
+      // Status filter
+      const matchesStatus = statusFilter === 'ALL' || inv.status === statusFilter;
 
-    // Date range
-    const matchesStart = !startDate || inv.invoiceDate >= startDate;
-    const matchesEnd = !endDate || inv.invoiceDate <= endDate;
+      // Date range
+      const matchesStart = !startDate || inv.invoiceDate >= startDate;
+      const matchesEnd = !endDate || inv.invoiceDate <= endDate;
 
-    return matchesSearch && matchesStatus && matchesStart && matchesEnd;
-  });
+      return matchesSearch && matchesStatus && matchesStart && matchesEnd;
+    });
 
-  // 15 items per page pagination
-  const itemsPerPage = 15;
+    result.sort((a, b) => {
+      const timeA = new Date(a.createdAt || a.invoiceDate).getTime() || 0;
+      const timeB = new Date(b.createdAt || b.invoiceDate).getTime() || 0;
+      return timeB - timeA;
+    });
+
+    return result;
+  }, [invoices, searchTerm, statusFilter, startDate, endDate]);
+
+  // Reset to page 1 whenever any filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, startDate, endDate, itemsPerPage]);
+
+  // Pagination slice
   const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
-  const paginatedInvoices = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedInvoices = useMemo(() => {
+    return filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  }, [filtered, currentPage, itemsPerPage]);
 
-  // Calculate totals for filtered set
-  const filteredTotal = filtered.reduce((sum, inv) => sum + inv.grandTotal, 0);
-  const filteredPaid = filtered.reduce((sum, inv) => sum + inv.amountPaid, 0);
-  const filteredDue = filtered.reduce((sum, inv) => sum + inv.balanceDue, 0);
+  // Calculate totals for filtered set in a single fast pass
+  const { filteredTotal, filteredPaid, filteredDue } = useMemo(() => {
+    let total = 0;
+    let paid = 0;
+    let due = 0;
+    for (let i = 0; i < filtered.length; i++) {
+      total += filtered[i].grandTotal;
+      paid += filtered[i].amountPaid;
+      due += filtered[i].balanceDue;
+    }
+    return { filteredTotal: total, filteredPaid: paid, filteredDue: due };
+  }, [filtered]);
+
+  // Counts for quick filter pills
+  const totalDueCount = useMemo(() => invoices.filter(i => i.balanceDue > 0).length, [invoices]);
+  const totalPaidCount = useMemo(() => invoices.filter(i => i.status === 'PAID').length, [invoices]);
 
   // Export to CSV for Accountant / CA
   const exportCSV = () => {
@@ -135,11 +215,11 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
         justifyContent: 'space-between', 
         flexWrap: 'wrap', 
         gap: '1rem',
-        marginBottom: '1.5rem'
+        marginBottom: '1.25rem'
       }}>
         <div>
           <h2 style={{ fontSize: '1.6rem', color: '#3f0913', margin: 0 }}>
-            Billing History & Customer Ledger
+            Bills & Customer Ledger
           </h2>
           <p style={{ fontSize: '0.82rem', color: '#666', margin: '3px 0 0 0' }}>
             Permanent database of all jewellery tax invoices, historical rate locks, and payment records.
@@ -156,7 +236,7 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
       </div>
 
       {/* Summary KPI Cards for Current Filter */}
-      <div className="metrics-grid" style={{ marginBottom: '1.5rem' }}>
+      <div className="metrics-grid" style={{ marginBottom: '1.25rem' }}>
         <div className="metric-card" style={{ '--card-accent': '#c59b48' } as any}>
           <div className="metric-info">
             <h4>Billed Amount</h4>
@@ -186,24 +266,101 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
         </div>
       </div>
 
+      {/* Quick Filter Chips Ribbon */}
+      <div className="ledger-quick-chips">
+        <button 
+          type="button"
+          className={`ledger-filter-chip ${!isFilterActive ? 'active' : ''}`}
+          onClick={() => handleQuickFilter('ALL')}
+        >
+          All Bills ({invoices.length})
+        </button>
+
+        <button 
+          type="button"
+          className={`ledger-filter-chip ${statusFilter === 'PARTIAL' ? 'active-red' : ''}`}
+          onClick={() => handleQuickFilter('PENDING')}
+        >
+          <Clock size={12} /> Pending Dues ({totalDueCount})
+        </button>
+
+        <button 
+          type="button"
+          className={`ledger-filter-chip ${statusFilter === 'PAID' ? 'active-green' : ''}`}
+          onClick={() => handleQuickFilter('PAID')}
+        >
+          <CheckCircle2 size={12} /> Fully Paid ({totalPaidCount})
+        </button>
+
+        <button 
+          type="button"
+          className="ledger-filter-chip"
+          onClick={() => handleQuickFilter('TODAY')}
+        >
+          <Calendar size={12} /> Today's Bills
+        </button>
+
+        <button 
+          type="button"
+          className="ledger-filter-chip"
+          onClick={() => handleQuickFilter('THIS_MONTH')}
+        >
+          This Month
+        </button>
+
+        {isFilterActive && (
+          <button 
+            type="button"
+            className="ledger-filter-chip"
+            style={{ background: '#fee2e2', color: '#b91c1c', borderColor: '#fca5a5' }}
+            onClick={handleClearFilters}
+            title="Reset All Filters"
+          >
+            <RotateCcw size={12} /> Reset Filters
+          </button>
+        )}
+      </div>
+
       {/* Search & Filter Bar */}
-      <div className="royal-card" style={{ marginBottom: '1.5rem' }}>
-        <div className="royal-card-body" style={{ padding: '1rem 1.25rem' }}>
+      <div className="royal-card" style={{ marginBottom: '1.25rem' }}>
+        <div className="royal-card-body" style={{ padding: '0.85rem 1.25rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1.5fr repeat(3, 1fr)', gap: '1rem', alignItems: 'center' }}>
             
-            {/* Search Input */}
-            <div className="input-with-symbol">
+            {/* Search Input with quick clear */}
+            <div className="input-with-symbol" style={{ position: 'relative' }}>
               <span className="input-symbol-prefix">
                 <Search size={16} />
               </span>
               <input
                 type="text"
                 className="form-input"
-                style={{ paddingLeft: '2.4rem' }}
+                style={{ paddingLeft: '2.4rem', paddingRight: searchTerm ? '2rem' : '0.8rem' }}
                 placeholder="Search by Bill No, Customer Name, Mobile..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#999',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                  title="Clear search"
+                >
+                  <X size={15} />
+                </button>
+              )}
             </div>
 
             {/* Status Filter */}
@@ -252,8 +409,19 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
           {filtered.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#777' }}>
               <AlertCircle size={38} color="#dfc794" style={{ margin: '0 auto 0.6rem auto' }} />
-              <h4>No invoices found matching criteria</h4>
-              <p style={{ fontSize: '0.85rem' }}>Try modifying search term, status filter or date range.</p>
+              <h4 style={{ color: '#3f0913', margin: '0 0 0.4rem 0' }}>No invoices found matching criteria</h4>
+              <p style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
+                Try modifying your search term, payment status filter or date range.
+              </p>
+              {isFilterActive && (
+                <button 
+                  type="button"
+                  className="btn-royal-outline btn-sm"
+                  onClick={handleClearFilters}
+                >
+                  <RotateCcw size={13} /> Reset All Filters
+                </button>
+              )}
             </div>
           ) : (
             <div className="items-table-wrap" style={{ border: 'none', margin: 0, overflowX: 'auto' }}>
@@ -345,45 +513,68 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
               </table>
 
               {/* Pagination Controls */}
-              {totalPages > 1 && (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.85rem 1.25rem',
-                  borderTop: '1px solid #e7dfd1',
-                  background: '#fdfbf7',
-                  flexWrap: 'wrap',
-                  gap: '0.75rem'
-                }}>
-                  <div style={{ fontSize: '0.85rem', color: '#666' }}>
-                    Showing <strong>{((currentPage - 1) * itemsPerPage) + 1}</strong> to <strong>{Math.min(currentPage * itemsPerPage, filtered.length)}</strong> of <strong>{filtered.length}</strong> bills (15 items per page)
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <button
-                      type="button"
-                      className="btn-royal-outline btn-sm"
-                      disabled={currentPage === 1}
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      style={{ opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.85rem 1.25rem',
+                borderTop: '1px solid #e7dfd1',
+                background: '#fdfbf7',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.85rem', color: '#666' }}>
+                  <span>
+                    Showing <strong>{filtered.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1}</strong> to <strong>{Math.min(currentPage * itemsPerPage, filtered.length)}</strong> of <strong>{filtered.length}</strong> bills
+                  </span>
+                  
+                  {/* Rows per page selector */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+                    <span>Per page:</span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                      style={{
+                        padding: '2px 6px',
+                        borderRadius: '6px',
+                        border: '1px solid #ebdcc5',
+                        background: '#fff',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer'
+                      }}
                     >
-                      <ChevronLeft size={16} /> Previous
-                    </button>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#3f0913', padding: '0 0.5rem' }}>
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn-royal-outline btn-sm"
-                      disabled={currentPage === totalPages}
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      style={{ opacity: currentPage === totalPages ? 0.5 : 1, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
-                    >
-                      Next <ChevronRight size={16} />
-                    </button>
-                  </div>
+                      <option value={15}>15</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </label>
                 </div>
-              )}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn-royal-outline btn-sm"
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    style={{ opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                  >
+                    <ChevronLeft size={16} /> Previous
+                  </button>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#3f0913', padding: '0 0.5rem' }}>
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-royal-outline btn-sm"
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    style={{ opacity: currentPage === totalPages ? 0.5 : 1, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                  >
+                    Next <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

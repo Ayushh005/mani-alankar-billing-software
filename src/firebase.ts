@@ -173,7 +173,7 @@ export const syncAllInvoicesToCloud = async (invoices: Invoice[]): Promise<boole
   }
 };
 
-// 3. Fetch All Invoices from Firestore
+// 3. Fetch All Invoices from Firestore (Sorted descending by date)
 export const fetchInvoicesFromCloud = async (): Promise<Invoice[] | null> => {
   const { db } = getFirebaseInstance();
   if (!db) return null;
@@ -187,6 +187,12 @@ export const fetchInvoicesFromCloud = async (): Promise<Invoice[] | null> => {
     snapshot.forEach(docSnap => {
       invoices.push(docSnap.data() as Invoice);
     });
+    // Sort chronological descending (latest first)
+    invoices.sort((a, b) => {
+      const timeA = new Date(a.createdAt || a.invoiceDate).getTime() || 0;
+      const timeB = new Date(b.createdAt || b.invoiceDate).getTime() || 0;
+      return timeB - timeA;
+    });
     return invoices;
   } catch (err) {
     console.error('Failed to fetch invoices from cloud:', err);
@@ -194,7 +200,7 @@ export const fetchInvoicesFromCloud = async (): Promise<Invoice[] | null> => {
   }
 };
 
-// 4. Real-time Invoices Subscription
+// 4. Real-time Invoices Subscription (Sorted descending by date)
 export const subscribeToCloudInvoices = (
   onData: (invoices: Invoice[]) => void
 ): (() => void) | null => {
@@ -209,6 +215,12 @@ export const subscribeToCloudInvoices = (
         list.push(docSnap.data() as Invoice);
       });
       if (list.length > 0) {
+        // Sort chronological descending (latest first)
+        list.sort((a, b) => {
+          const timeA = new Date(a.createdAt || a.invoiceDate).getTime() || 0;
+          const timeB = new Date(b.createdAt || b.invoiceDate).getTime() || 0;
+          return timeB - timeA;
+        });
         onData(list);
       }
     }, (err) => {

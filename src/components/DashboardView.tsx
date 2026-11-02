@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   TrendingUp, 
   FileText, 
@@ -30,19 +30,44 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onViewInvoice,
   onRecordPaymentClick
 }) => {
-  // Compute metrics
-  const totalInvoicesCount = invoices.length;
-  const totalSalesVolume = invoices.reduce((sum, inv) => sum + inv.grandTotal, 0);
-  const totalCollected = invoices.reduce((sum, inv) => sum + inv.amountPaid, 0);
-  const totalOutstanding = invoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
+  // Memoize computation of metrics and sort descending
+  const { totalInvoicesCount, totalSalesVolume, totalCollected, totalOutstanding, sortedInvoices, pendingInvoices } = useMemo(() => {
+    const sorted = [...invoices].sort((a, b) => {
+      const timeA = new Date(a.createdAt || a.invoiceDate).getTime() || 0;
+      const timeB = new Date(b.createdAt || b.invoiceDate).getTime() || 0;
+      return timeB - timeA;
+    });
 
-  const pendingInvoices = invoices.filter(inv => inv.balanceDue > 0);
+    let sales = 0;
+    let collected = 0;
+    let outstanding = 0;
+    const pending: Invoice[] = [];
+
+    for (let i = 0; i < sorted.length; i++) {
+      const inv = sorted[i];
+      sales += inv.grandTotal;
+      collected += inv.amountPaid;
+      outstanding += inv.balanceDue;
+      if (inv.balanceDue > 0) {
+        pending.push(inv);
+      }
+    }
+
+    return {
+      totalInvoicesCount: sorted.length,
+      totalSalesVolume: sales,
+      totalCollected: collected,
+      totalOutstanding: outstanding,
+      sortedInvoices: sorted,
+      pendingInvoices: pending
+    };
+  }, [invoices]);
 
   // Pagination states (15 items per page)
   const [invoicesPage, setInvoicesPage] = useState<number>(1);
   const invoicesPerPage = 15;
-  const totalInvoicePages = Math.ceil(invoices.length / invoicesPerPage) || 1;
-  const paginatedInvoices = invoices.slice((invoicesPage - 1) * invoicesPerPage, invoicesPage * invoicesPerPage);
+  const totalInvoicePages = Math.ceil(sortedInvoices.length / invoicesPerPage) || 1;
+  const paginatedInvoices = sortedInvoices.slice((invoicesPage - 1) * invoicesPerPage, invoicesPage * invoicesPerPage);
 
   const [pendingPage, setPendingPage] = useState<number>(1);
   const pendingPerPage = 15;

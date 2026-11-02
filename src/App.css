@@ -552,6 +552,59 @@
   box-shadow: 0 4px 10px rgba(185, 28, 28, 0.16);
 }
 
+/* Ledger Quick Filter Chips */
+.ledger-quick-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.95rem;
+}
+
+.ledger-filter-chip {
+  background: #fdfbf7;
+  border: 1px solid #ebdcc5;
+  border-radius: 9999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #6d5435;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  user-select: none;
+}
+
+.ledger-filter-chip:hover {
+  background: #f9eed9;
+  border-color: #c59b48;
+  color: #3f0913;
+  transform: translateY(-1px);
+}
+
+.ledger-filter-chip.active {
+  background: #3f0913;
+  color: #f7e7be;
+  border-color: #c59b48;
+  box-shadow: 0 2px 6px rgba(63, 9, 19, 0.2);
+}
+
+.ledger-filter-chip.active-red {
+  background: #991b1b;
+  color: #ffffff;
+  border-color: #ef4444;
+  box-shadow: 0 2px 6px rgba(185, 28, 28, 0.25);
+}
+
+.ledger-filter-chip.active-green {
+  background: #15803d;
+  color: #ffffff;
+  border-color: #22c55e;
+  box-shadow: 0 2px 6px rgba(21, 128, 61, 0.25);
+}
+
 /* Royal Footer */
 .royal-footer {
   background: #200308;

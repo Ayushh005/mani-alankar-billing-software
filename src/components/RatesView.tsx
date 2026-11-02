@@ -108,7 +108,7 @@ export const RatesView: React.FC<RatesViewProps> = ({
             <span>Store Pricing Master</span>
           </div>
           <h2 style={{ fontSize: '1.65rem', color: '#f7e7be', margin: '6px 0 4px 0', fontFamily: 'var(--font-serif)' }}>
-            Daily Metal Rates Configuration
+            Set Metal Rates
           </h2>
           <p style={{ fontSize: '0.86rem', color: '#ded4c3', margin: 0, maxWidth: '650px' }}>
             Manually enter today's gold and silver rates. When you create new bills, the active rate set here will be automatically applied and permanently locked to that invoice.

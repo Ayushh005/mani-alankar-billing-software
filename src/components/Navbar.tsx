@@ -40,7 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'history':
         return { title: 'Bills & Customer Ledger', subtitle: 'Invoice history, partial payment receipts & outstanding balance' };
       case 'rates':
-        return { title: 'Daily Metal Rates', subtitle: 'Manually configure store rates for Gold & Silver' };
+        return { title: 'Set Metal Rates', subtitle: 'Manually configure store rates for Gold & Silver' };
       case 'settings':
         return { title: 'Shop & GST Settings', subtitle: 'Store address, GSTIN, HSN codes & invoice print styling' };
       default:

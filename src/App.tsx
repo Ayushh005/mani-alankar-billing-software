@@ -47,12 +47,31 @@ export const App: React.FC = () => {
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
 
-  // Real-time Cloud Invoices Subscription
+  // Real-time Cloud Invoices Subscription with safe deduplication
   useEffect(() => {
     const unsubscribe = subscribeToCloudInvoices((cloudInvoices) => {
       if (cloudInvoices && cloudInvoices.length > 0) {
-        saveInvoices(cloudInvoices);
-        setInvoices(cloudInvoices);
+        setInvoices(currentInvoices => {
+          const map = new Map<string, Invoice>();
+          // Insert cloud invoices
+          cloudInvoices.forEach(inv => {
+            if (inv && inv.id) map.set(inv.id, inv);
+          });
+          // Preserve any local invoice not yet seen by cloud
+          currentInvoices.forEach(inv => {
+            if (inv && inv.id && !map.has(inv.id)) {
+              map.set(inv.id, inv);
+            }
+          });
+          const merged = Array.from(map.values());
+          merged.sort((a, b) => {
+            const timeA = new Date(a.createdAt || a.invoiceDate).getTime() || 0;
+            const timeB = new Date(b.createdAt || b.invoiceDate).getTime() || 0;
+            return timeB - timeA;
+          });
+          saveInvoices(merged);
+          return merged;
+        });
       }
     });
 

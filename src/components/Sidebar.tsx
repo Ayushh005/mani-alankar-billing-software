@@ -121,13 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Receipt size={18} />
               </div>
               <span className="sidebar-nav-label">Bills & Ledger</span>
-              {pendingCount > 0 ? (
-                <span className="sidebar-badge-due" title={`${pendingCount} bills with pending dues`}>
-                  {pendingCount}
-                </span>
-              ) : (
-                activeTab === 'history' && <ChevronRight size={14} className="active-arrow" />
-              )}
+              {activeTab === 'history' && <ChevronRight size={14} className="active-arrow" />}
             </button>
 
             <button 
@@ -137,7 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="sidebar-nav-icon">
                 <Sparkles size={18} />
               </div>
-              <span className="sidebar-nav-label">Daily Metal Rates</span>
+              <span className="sidebar-nav-label">Set Metal Rates</span>
               {activeTab === 'rates' && <ChevronRight size={14} className="active-arrow" />}
             </button>
 
