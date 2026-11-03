@@ -37,21 +37,36 @@ interface BillingFormViewProps {
   settings: ShopSettings;
   existingInvoices: Invoice[];
   onSaveInvoice: (invoice: Invoice, openPreview?: boolean) => void;
+  onPreviewDraftInvoice?: (invoice: Invoice) => void;
 }
 
 export const BillingFormView: React.FC<BillingFormViewProps> = ({
   rates,
   settings,
   existingInvoices,
-  onSaveInvoice
+  onSaveInvoice,
+  onPreviewDraftInvoice
 }) => {
+  // Confirmation Modal state for Double Check before saving
+  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
+  const [pendingInvoice, setPendingInvoice] = useState<Invoice | null>(null);
+
   // Customer Details
   const [customerName, setCustomerName] = useState<string>('');
   const [customerMobile, setCustomerMobile] = useState<string>('');
   const [customerAddress, setCustomerAddress] = useState<string>('Local Market');
-  const [customerCity, setCustomerCity] = useState<string>(settings.city);
-  const [customerState, setCustomerState] = useState<string>(settings.state);
+  const [customerCity, setCustomerCity] = useState<string>(settings.city || 'Bara Chakia');
+  const [customerState, setCustomerState] = useState<string>((settings.state === 'Rajasthan' || !settings.state) ? 'Bihar' : settings.state);
   const [customerGstin, setCustomerGstin] = useState<string>('');
+
+  useEffect(() => {
+    if (settings.city && (!customerCity || customerCity === 'Jaipur')) {
+      setCustomerCity(settings.city);
+    }
+    if (settings.state && (!customerState || customerState === 'Rajasthan')) {
+      setCustomerState((settings.state === 'Rajasthan' || !settings.state) ? 'Bihar' : settings.state);
+    }
+  }, [settings.city, settings.state]);
 
   // Items in bill
   const [items, setItems] = useState<InvoiceItem[]>(() => {
@@ -60,7 +75,7 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
       id: `itm_${Date.now()}_1`,
       metal: 'GOLD',
       purity: '22K (916)',
-      description: 'Gold Ornament (Hallmarked 916)',
+      description: '',
       hsnCode: '7113',
       grossWeight: 0,
       netWeight: 0,
@@ -105,7 +120,7 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
         setCustomerName(found.customer.name);
         setCustomerAddress(found.customer.address);
         setCustomerCity(found.customer.city);
-        setCustomerState(found.customer.state);
+        setCustomerState((found.customer.state === 'Rajasthan' || !found.customer.state) ? 'Bihar' : found.customer.state);
         if (found.customer.gstin) setCustomerGstin(found.customer.gstin);
       }
     }
@@ -113,14 +128,15 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
 
   // Add Item to bill
   const handleAddItem = (metal: MetalType = 'GOLD') => {
-    const purity = metal === 'GOLD' ? '22K (916)' : 'Silver 925 (Sterling)';
+    const purity = metal === 'GOLD' ? '22K (916)' : metal === 'SILVER' ? 'Silver 925 (Sterling)' : '18K (750)';
     const rate = getRateForPurity(rates, metal, purity);
+    const hsn = metal === 'DIAMOND' ? '7102' : '7113';
     const newItemRaw: Omit<InvoiceItem, 'metalValue' | 'makingChargeAmount' | 'totalItemAmount' | 'wastageAmount'> = {
       id: `itm_${Date.now()}_${items.length + 1}`,
       metal,
       purity,
-      description: metal === 'GOLD' ? 'Gold Ornament (Hallmarked 916)' : 'Silver Article / Jewellery',
-      hsnCode: metal === 'GOLD' ? '7113' : '7106',
+      description: '',
+      hsnCode: hsn,
       grossWeight: 0,
       netWeight: 0,
       stoneWeight: 0,
@@ -138,6 +154,21 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
     setItems(items.map(it => {
       if (it.id !== id) return it;
       const merged = { ...it, ...updates };
+
+      // Automatic HSN and default purity/rates on metal change
+      if (updates.metal) {
+        if (updates.metal === 'DIAMOND') merged.hsnCode = '7102';
+        else if (updates.metal === 'SILVER') merged.hsnCode = '7113';
+        else merged.hsnCode = '7113';
+
+        if (!updates.purity) {
+          merged.purity = updates.metal === 'GOLD' 
+            ? '22K (916)' 
+            : updates.metal === 'SILVER' 
+              ? 'Silver 925 (Sterling)' 
+              : '18K (750)';
+        }
+      }
 
       // If metal or purity changed, recalculate default rate if user hasn't overridden
       if (updates.metal || updates.purity) {
@@ -233,20 +264,25 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
     if (preset === 'ZERO') setAmountPaid(0);
   };
 
-  const handleCreateInvoice = (openPreview: boolean = true) => {
+  const buildInvoiceObject = (): Invoice | null => {
     if (!customerName.trim()) {
       alert('Please enter Customer Name.');
-      return;
+      return null;
     }
     if (!customerMobile.trim() || customerMobile.length < 10) {
       alert('Please enter a valid 10-digit Customer Mobile Number.');
-      return;
+      return null;
     }
 
     const seqStr = String(settings.nextInvoiceSeq || 1).padStart(4, '0');
     const invoiceNumber = `${settings.invoicePrefix}${seqStr}`;
 
-    const newInvoice: Invoice = {
+    const sanitizedItems = items.map(it => ({
+      ...it,
+      description: it.description.trim() || (it.metal === 'GOLD' ? 'Gold Ornament' : it.metal === 'SILVER' ? 'Silver Ornament' : 'Diamond Jewellery')
+    }));
+
+    return {
       id: `inv_${Date.now()}`,
       invoiceNumber,
       invoiceDate: new Date().toISOString().slice(0, 10),
@@ -254,11 +290,11 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
         name: customerName.trim(),
         mobile: customerMobile.trim(),
         address: customerAddress.trim(),
-        city: customerCity.trim(),
-        state: customerState.trim(),
+        city: customerCity.trim() || settings.city || 'Bara Chakia',
+        state: (customerState.trim() === 'Rajasthan' || !customerState.trim()) ? (settings.state || 'Bihar') : customerState.trim(),
         gstin: customerGstin.trim() || undefined
       },
-      items,
+      items: sanitizedItems,
       metalValueTotal,
       makingChargesTotal,
       stoneChargesTotal,
@@ -298,8 +334,25 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+  };
 
-    onSaveInvoice(newInvoice, openPreview);
+  // Double Check Confirmation on "Save Bill to Database"
+  const handleRequestSaveToDatabase = () => {
+    const inv = buildInvoiceObject();
+    if (!inv) return;
+    setPendingInvoice(inv);
+    setShowConfirmModal(true);
+  };
+
+  // "Generate & Print Invoice" -> Opens Preview Draft first without saving to DB yet!
+  const handleRequestPreviewAndPrint = () => {
+    const inv = buildInvoiceObject();
+    if (!inv) return;
+    if (onPreviewDraftInvoice) {
+      onPreviewDraftInvoice(inv);
+    } else {
+      onSaveInvoice(inv, true);
+    }
   };
 
   return (
@@ -321,7 +374,7 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
           </div>
 
           <div className="royal-card-body">
-            <div className="form-grid-3">
+            <div className="form-grid-4">
               <div className="form-group">
                 <label className="form-label">
                   <span>Customer Mobile No *</span>
@@ -361,6 +414,19 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                   placeholder="City"
                   value={customerCity}
                   onChange={(e) => setCustomerCity(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">
+                  <span>State (Place of Supply)</span>
+                </label>
+                <input 
+                  type="text"
+                  className="form-input"
+                  placeholder="Bihar"
+                  value={customerState}
+                  onChange={(e) => setCustomerState(e.target.value)}
                 />
               </div>
             </div>
@@ -434,9 +500,9 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                     }}>
                       {idx + 1}
                     </span>
-                    <strong style={{ color: '#2b040b', fontSize: '0.95rem' }}>{item.description}</strong>
+                    <strong style={{ color: '#2b040b', fontSize: '0.95rem' }}>{item.description || 'eg. Jhumka'}</strong>
                     <span className="badge" style={{ background: '#f5ecdb', color: '#886226', border: '1px solid #d4b26f' }}>
-                      {item.metal} &bull; {item.purity}
+                      {item.metal} &bull; {item.purity} &bull; HSN {item.hsnCode}
                     </span>
                   </div>
 
@@ -482,11 +548,17 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                           <option value="18K (750)">18K (750 Hallmark)</option>
                           <option value="14K (585)">14K (585 Hallmark)</option>
                         </>
-                      ) : (
+                      ) : item.metal === 'SILVER' ? (
                         <>
                           <option value="Silver 925 (Sterling)">Silver 925 (Sterling)</option>
                           <option value="Silver 999">Silver 999 (Fine)</option>
                           <option value="Silver 800">Silver 800 (Ornaments)</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="18K (750)">18K (750 Base)</option>
+                          <option value="14K (585)">14K (585 Base)</option>
+                          <option value="Certified Solitaire">Certified Solitaire</option>
                         </>
                       )}
                     </select>
@@ -494,11 +566,14 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
 
                   {/* Description */}
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">Item Description</label>
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Item Description</span>
+                      <span style={{ fontSize: '0.72rem', color: '#886226', fontWeight: 700 }}>HSN: {item.hsnCode}</span>
+                    </label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. 22K Gold Choker, Jhumka, Bangles"
+                      placeholder="eg. Jhumka"
                       value={item.description}
                       onChange={(e) => handleUpdateItem(item.id, { description: e.target.value })}
                     />
@@ -1048,7 +1123,7 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                 type="button" 
                 className="btn-royal-gold" 
                 style={{ width: '100%', fontSize: '1rem', padding: '0.85rem' }}
-                onClick={() => handleCreateInvoice(true)}
+                onClick={handleRequestPreviewAndPrint}
               >
                 <FileCheck size={18} /> Generate & Print Invoice
               </button>
@@ -1057,7 +1132,7 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                 type="button" 
                 className="btn-royal-primary" 
                 style={{ width: '100%' }}
-                onClick={() => handleCreateInvoice(false)}
+                onClick={handleRequestSaveToDatabase}
               >
                 Save Bill to Database
               </button>
@@ -1077,12 +1152,81 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
         <button 
           type="button" 
           className="btn-royal-gold mobile-bottom-submit-btn"
-          onClick={() => handleCreateInvoice(true)}
+          onClick={handleRequestPreviewAndPrint}
         >
           <FileCheck size={18} />
           <span>Generate Bill</span>
         </button>
       </div>
+
+      {/* Double Check Confirmation Modal before Saving to Database */}
+      {showConfirmModal && pendingInvoice && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '440px', padding: 0, overflow: 'hidden' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #3f0913 0%, #220308 100%)',
+              color: '#f7e7be',
+              padding: '1.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              borderBottom: '2px solid #c59b48'
+            }}>
+              <AlertCircle size={24} color="#e6ca65" />
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#f7e7be' }}>Double-Check: Save Bill?</h3>
+                <span style={{ fontSize: '0.75rem', color: '#dfc794' }}>डेटाबेस में सुरक्षित करने से पहले जाँचें</span>
+              </div>
+            </div>
+
+            <div style={{ padding: '1.25rem', background: '#faf7f2' }}>
+              <p style={{ fontSize: '0.88rem', color: '#444', marginBottom: '1rem' }}>
+                क्या आप इस बिल को डेटाबेस में सुरक्षित (Save) करना चाहते हैं?
+              </p>
+
+              <div style={{
+                background: '#ffffff',
+                border: '1px solid #ebdcc5',
+                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+                fontSize: '0.85rem',
+                lineHeight: '1.6',
+                marginBottom: '1.25rem'
+              }}>
+                <div><strong>Customer:</strong> {pendingInvoice.customer.name} ({pendingInvoice.customer.mobile})</div>
+                <div><strong>Items:</strong> {pendingInvoice.items.length} item(s)</div>
+                <div><strong>Grand Total:</strong> <strong style={{ color: '#886226', fontSize: '1rem' }}>{formatCurrency(pendingInvoice.grandTotal)}</strong></div>
+                <div><strong>Amount Paid:</strong> {formatCurrency(pendingInvoice.amountPaid)}</div>
+                {pendingInvoice.balanceDue > 0 ? (
+                  <div style={{ color: '#b91c1c' }}><strong>Balance Due:</strong> {formatCurrency(pendingInvoice.balanceDue)}</div>
+                ) : (
+                  <div style={{ color: '#15803d' }}><strong>Payment:</strong> FULL PAID</div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn-royal-outline"
+                  onClick={() => setShowConfirmModal(false)}
+                >
+                  Cancel (रद्द करें)
+                </button>
+                <button
+                  type="button"
+                  className="btn-royal-gold"
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    onSaveInvoice(pendingInvoice, false);
+                  }}
+                >
+                  Confirm & Save to DB
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

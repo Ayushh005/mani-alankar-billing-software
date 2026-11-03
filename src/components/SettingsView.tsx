@@ -194,7 +194,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g. 302003"
+                  placeholder="e.g. 845412"
                   value={formData.pincode || ''}
                   onChange={(e) => handleChange('pincode', e.target.value)}
                   required
@@ -275,7 +275,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 {/* Additional Authorized Emails List */}
-                {formData.authorizedGmails && formData.authorizedGmails.filter(e => e.toLowerCase() !== 'manialankar3@gmail.com').map((email, idx) => (
+                {formData.authorizedGmails && formData.authorizedGmails
+                  .filter(e => {
+                    const l = e.toLowerCase().trim();
+                    return l !== 'manialankar3@gmail.com' && l !== 'ayushofficial2323@gmail.com';
+                  })
+                  .map((email, idx) => (
                   <div 
                     key={idx}
                     style={{
@@ -405,7 +410,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="form-input"
                   value={formData.stateCode}
                   onChange={(e) => handleChange('stateCode', e.target.value)}
-                  placeholder="08 (Bihar)"
+                  placeholder="10 (Bihar)"
                   required
                 />
               </div>

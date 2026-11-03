@@ -47,6 +47,7 @@ export const App: React.FC = () => {
 
   // Modals
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
+  const [isDraftInvoice, setIsDraftInvoice] = useState<boolean>(false);
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
 
   // Real-time Cloud Invoices Subscription with safe deduplication
@@ -97,6 +98,17 @@ export const App: React.FC = () => {
     return () => {
       if (unsubscribe) unsubscribe();
     };
+  }, []);
+
+  // Prevent mouse wheel from inadvertently changing number inputs
+  useEffect(() => {
+    const handleWheel = () => {
+      if (document.activeElement?.tagName === 'INPUT' && (document.activeElement as HTMLInputElement).type === 'number') {
+        (document.activeElement as HTMLElement).blur();
+      }
+    };
+    window.addEventListener('wheel', handleWheel, { passive: true });
+    return () => window.removeEventListener('wheel', handleWheel);
   }, []);
 
   // Sync settings on mount/login
@@ -259,7 +271,10 @@ export const App: React.FC = () => {
               invoices={invoices}
               rates={rates}
               onNewBillClick={() => setActiveTab('billing')}
-              onViewInvoice={(inv) => setViewingInvoice(inv)}
+              onViewInvoice={(inv) => {
+                setViewingInvoice(inv);
+                setIsDraftInvoice(false);
+              }}
               onRecordPaymentClick={(inv) => setPayingInvoice(inv)}
             />
           )}
@@ -269,14 +284,21 @@ export const App: React.FC = () => {
               rates={rates}
               settings={settings}
               existingInvoices={invoices}
-              onSaveInvoice={handleSaveInvoice}
+              onSaveInvoice={(inv) => handleSaveInvoice(inv, false)}
+              onPreviewDraftInvoice={(inv) => {
+                setViewingInvoice(inv);
+                setIsDraftInvoice(true);
+              }}
             />
           )}
 
           {activeTab === 'history' && (
             <HistoryLedgerView 
               invoices={invoices}
-              onViewInvoice={(inv) => setViewingInvoice(inv)}
+              onViewInvoice={(inv) => {
+                setViewingInvoice(inv);
+                setIsDraftInvoice(false);
+              }}
               onRecordPaymentClick={(inv) => setPayingInvoice(inv)}
             />
           )}
@@ -319,7 +341,15 @@ export const App: React.FC = () => {
         <InvoiceModal 
           invoice={viewingInvoice}
           settings={settings}
-          onClose={() => setViewingInvoice(null)}
+          isDraft={isDraftInvoice}
+          onClose={() => {
+            setViewingInvoice(null);
+            setIsDraftInvoice(false);
+          }}
+          onConfirmSaveDraft={(inv) => {
+            handleSaveInvoice(inv, false);
+            setIsDraftInvoice(false);
+          }}
           onRecordPaymentClick={(inv) => setPayingInvoice(inv)}
         />
       )}

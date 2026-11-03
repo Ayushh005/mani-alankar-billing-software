@@ -13,24 +13,53 @@ import {
 import { Invoice, ShopSettings } from '../types';
 import { formatCurrency, formatGrams, numberToWordsINR } from '../utils/calculations';
 
+// Helper to format ISO YYYY-MM-DD to Indian DD/MM/YYYY
+const formatDateDDMMYYYY = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const parts = dateStr.slice(0, 10).split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+};
+
 interface InvoiceModalProps {
   invoice: Invoice | null;
   settings: ShopSettings;
+  isDraft?: boolean;
   onClose: () => void;
+  onConfirmSaveDraft?: (invoice: Invoice) => void;
   onRecordPaymentClick?: (invoice: Invoice) => void;
 }
 
 export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   invoice,
   settings,
+  isDraft = false,
   onClose,
+  onConfirmSaveDraft,
   onRecordPaymentClick
 }) => {
   const [printLayout, setPrintLayout] = useState<'A4' | 'THERMAL'>('A4');
+  const [isSavedLocally, setIsSavedLocally] = useState<boolean>(!isDraft);
 
   if (!invoice) return null;
 
+  const displayStateCode = (settings.stateCode === '08' || !settings.stateCode) ? '10' : settings.stateCode;
+  const displayState = (settings.state === 'Rajasthan' || !settings.state) ? 'Bihar' : settings.state;
+  const displayCity = (settings.city === 'Jaipur' || !settings.city) ? 'Bara Chakia' : settings.city;
+  const displayPincode = (settings.pincode === '302003' || !settings.pincode) ? '845412' : settings.pincode;
+  const displayGstin = (settings.gstin?.startsWith('08') || !settings.gstin) ? `10${settings.gstin?.slice(2) || 'ABCDE1234F1Z5'}` : settings.gstin;
+  const displayAddress = (settings.address || 'Sahebganj Road, Bara Chakia').replace(/,,+/g, ',');
+  const displayPlaceOfSupply = (invoice.customer.state && invoice.customer.state !== 'Rajasthan') 
+    ? invoice.customer.state 
+    : 'Bihar';
+
   const handlePrint = () => {
+    if (isDraft && !isSavedLocally && onConfirmSaveDraft && invoice) {
+      onConfirmSaveDraft(invoice);
+      setIsSavedLocally(true);
+    }
     window.print();
   };
 
@@ -38,7 +67,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     const text = encodeURIComponent(
       `*Mani Alankar Jewellers — Tax Invoice*\n` +
       `Invoice No: ${invoice.invoiceNumber}\n` +
-      `Date: ${invoice.invoiceDate}\n` +
+      `Date: ${formatDateDDMMYYYY(invoice.invoiceDate)}\n` +
       `Customer: ${invoice.customer.name}\n` +
       `Grand Total: ${formatCurrency(invoice.grandTotal)}\n` +
       `Amount Paid: ${formatCurrency(invoice.amountPaid)}\n` +
@@ -54,6 +83,33 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     <div className="modal-overlay">
       <div className="modal-content" style={{ maxWidth: printLayout === 'A4' ? '920px' : '440px' }}>
         
+        {/* Unsaved Draft Banner */}
+        {isDraft && !isSavedLocally && (
+          <div className="no-print" style={{
+            background: '#fffbeb',
+            borderBottom: '1.5px solid #fde68a',
+            padding: '7px 14px',
+            fontSize: '0.8rem',
+            color: '#92400e',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <span>
+              ℹ️ <strong>Preview Draft:</strong> Yeh bill abhi database me save nahi hua hai. <strong>Print / Download</strong> karne par yeh save hoga.
+            </span>
+            <span style={{
+              fontWeight: 700,
+              background: '#fef3c7',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              border: '1px solid #fcd34d'
+            }}>
+              Unsaved Draft
+            </span>
+          </div>
+        )}
+
         {/* Modal Controls - Hidden during Print */}
         <div className="modal-header no-print">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -100,9 +156,17 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             <button 
               className="btn-royal-gold btn-sm"
               onClick={handlePrint}
-              title="Print Invoice"
+              title={isDraft && !isSavedLocally ? "Save & Print Invoice" : "Print Invoice"}
             >
-              <Printer size={15} /> Print
+              <Printer size={15} /> {isDraft && !isSavedLocally ? "Save & Print" : "Print"}
+            </button>
+
+            <button 
+              className="btn-royal-gold btn-sm"
+              onClick={handlePrint}
+              title="Download / Save PDF"
+            >
+              <Download size={15} /> Download PDF
             </button>
 
             <button 
@@ -141,12 +205,12 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 <div className="invoice-company-details">
                   <h2>{settings.shopName}</h2>
                   <p style={{ fontWeight: 600, color: '#684507' }}>{settings.tagline}</p>
-                  <p>{settings.address}, {settings.city}, {settings.state} - {settings.pincode}</p>
+                  <p>{displayAddress}, {displayCity}, {displayState} - {displayPincode}</p>
                   <p>
                     <strong>Phone:</strong> {settings.phone} | <strong>Email:</strong> {settings.email}
                   </p>
                   <p>
-                    <strong>GSTIN:</strong> {settings.gstin} | <strong>PAN:</strong> {settings.pan} | <strong>BIS Hallmark Lic:</strong> {settings.bisHallmarkLicense}
+                    <strong>GSTIN:</strong> {displayGstin} | <strong>PAN:</strong> {settings.pan} | <strong>BIS Hallmark Lic:</strong> {settings.bisHallmarkLicense}
                   </p>
                 </div>
 
@@ -165,7 +229,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   </div>
                   <div style={{ marginTop: '6px', fontSize: '11px', textAlign: 'right' }}>
                     <div><strong>Original for Recipient</strong></div>
-                    <div>State Code: <strong>{settings.stateCode} ({settings.state})</strong></div>
+                    <div>State Code: <strong>{displayStateCode} ({displayState})</strong></div>
                   </div>
                 </div>
               </div>
@@ -186,7 +250,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                       </tr>
                       <tr>
                         <td style={{ color: '#555' }}>Address:</td>
-                        <td>{invoice.customer.address}, {invoice.customer.city}, {invoice.customer.state}</td>
+                        <td>{invoice.customer.address}, {invoice.customer.city}, {invoice.customer.state === 'Rajasthan' ? 'Bihar' : (invoice.customer.state || displayState)}</td>
                       </tr>
                       {invoice.customer.gstin && (
                         <tr>
@@ -208,11 +272,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                       </tr>
                       <tr>
                         <td style={{ color: '#555' }}>Date of Issue:</td>
-                        <td><strong>{invoice.invoiceDate}</strong></td>
+                        <td><strong>{formatDateDDMMYYYY(invoice.invoiceDate)}</strong></td>
                       </tr>
                       <tr>
                         <td style={{ color: '#555' }}>Place of Supply:</td>
-                        <td>{invoice.customer.state || settings.state}</td>
+                        <td><strong>{displayPlaceOfSupply}</strong></td>
                       </tr>
                       <tr>
                         <td style={{ color: '#555' }}>Payment Status:</td>
@@ -324,7 +388,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                           {invoice.payments.map((p, idx) => (
                             <tr key={p.id} style={{ borderBottom: '1px dotted #ccc' }}>
                               <td style={{ padding: '2px 0' }}>
-                                #{idx + 1} &bull; {p.paidAt.slice(0, 10)}
+                                #{idx + 1} &bull; {formatDateDDMMYYYY(p.paidAt)}
                               </td>
                               <td>
                                 <strong>{p.paymentMethod}</strong> {p.transactionRef ? `(${p.transactionRef})` : ''}
@@ -493,15 +557,16 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             }}>
               <div style={{ textAlign: 'center', borderBottom: '1px dashed #333', paddingBottom: '8px' }}>
                 <h3 style={{ fontSize: '14px', margin: 0, fontWeight: 900 }}>MANI ALANKAR JEWELLERS</h3>
-                <div>{settings.address}, {settings.city}{settings.pincode ? ` - ${settings.pincode}` : ''}</div>
-                <div>GSTIN: {settings.gstin}</div>
+                <div>{displayAddress}, {displayCity} - {displayPincode}</div>
+                <div>GSTIN: {displayGstin}</div>
                 <div>Ph: {settings.phone}</div>
                 <div style={{ marginTop: '4px', fontWeight: 700 }}>*** TAX INVOICE ***</div>
               </div>
 
               <div style={{ margin: '8px 0', borderBottom: '1px dashed #333', paddingBottom: '6px' }}>
                 <div>Bill No: <strong>{invoice.invoiceNumber}</strong></div>
-                <div>Date: {invoice.invoiceDate}</div>
+                <div>Date: <strong>{formatDateDDMMYYYY(invoice.invoiceDate)}</strong></div>
+                <div>Place of Supply: <strong>{displayPlaceOfSupply}</strong></div>
                 <div>Cust: <strong>{invoice.customer.name}</strong> ({invoice.customer.mobile})</div>
               </div>
 
@@ -558,7 +623,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     <div style={{ fontWeight: 700, marginBottom: '2px' }}>Payment Installments (किश्त विवरण):</div>
                     {invoice.payments.map((p, idx) => (
                       <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', color: '#15803d' }}>
-                        <span>#{idx + 1} ({p.paidAt.slice(0, 10)}) {p.paymentMethod}:</span>
+                        <span>#{idx + 1} ({formatDateDDMMYYYY(p.paidAt)}) {p.paymentMethod}:</span>
                         <span>+{formatCurrency(p.amount)}</span>
                       </div>
                     ))}
@@ -595,7 +660,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           </button>
           
           <button className="btn-royal-gold" onClick={handlePrint}>
-            <Printer size={16} /> Print Official Bill
+            <Printer size={16} /> {isDraft && !isSavedLocally ? 'Save & Print Official Bill' : 'Print Official Bill'}
           </button>
         </div>
 

@@ -8,19 +8,19 @@ const INVOICES_KEY = 'mani_alankar_invoices_db';
 export const DEFAULT_SETTINGS: ShopSettings = {
   shopName: 'MANI ALANKAR JEWELLERS',
   tagline: 'Royal Indian Jewellery & Hallmark Certified Ornaments',
-  address: 'Shop No. 12, Gold Souk, Sarafa Bazaar',
-  city: 'Jaipur',
-  state: 'Rajasthan',
-  pincode: '302003',
+  address: 'Sahebganj Road, Bara Chakia',
+  city: 'Bara Chakia',
+  state: 'Bihar',
+  pincode: '845412',
   phone: '+91 98290 12345',
   alternatePhone: '+91 94140 67890',
   email: 'manialankar3@gmail.com',
   authorizedGmail: 'manialankar3@gmail.com',
   authorizedGmails: ['manialankar3@gmail.com', 'ayushofficial2323@gmail.com'],
-  gstin: '08ABCDE1234F1Z5',
+  gstin: '10ABCDE1234F1Z5',
   pan: 'ABCDE1234F',
   bisHallmarkLicense: 'HM/C-8921045620',
-  stateCode: '08',
+  stateCode: '10',
   
   invoicePrefix: 'MA/2026-27/',
   currentFinancialYear: '2026-27',
@@ -33,7 +33,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   bankName: 'HDFC Bank Ltd',
   accountNo: '50200089123456',
   ifsc: 'HDFC0001234',
-  branch: 'Sarafa Bazaar Branch, Jaipur',
+  branch: 'Bara Chakia Branch, Bihar',
   upiId: 'manialankar@okhdfcbank',
   
   invoiceTerms: [
@@ -54,9 +54,9 @@ const SEED_INVOICES: Invoice[] = [
     customer: {
       name: 'Rameshwar Lal Sharma',
       mobile: '9828011223',
-      address: 'Plot 45, Vidhyadhar Nagar',
-      city: 'Jaipur',
-      state: 'Rajasthan',
+      address: 'Main Market, Sahebganj Road',
+      city: 'Bara Chakia',
+      state: 'Bihar',
     },
     items: [
       {
@@ -137,11 +137,11 @@ const SEED_INVOICES: Invoice[] = [
     invoiceNumber: 'MA/2026-27/0002',
     invoiceDate: '2026-10-20',
     customer: {
-      name: 'Sunita Meena',
+      name: 'Sunita Kumari',
       mobile: '9414022334',
-      address: 'Sector 3, Malviya Nagar',
-      city: 'Jaipur',
-      state: 'Rajasthan',
+      address: 'Station Road',
+      city: 'Muzaffarpur',
+      state: 'Bihar',
     },
     items: [
       {
@@ -223,11 +223,11 @@ const SEED_INVOICES: Invoice[] = [
     invoiceNumber: 'MA/2026-27/0003',
     invoiceDate: '2026-10-21',
     customer: {
-      name: 'Vikas Agarwal',
+      name: 'Vikas Kumar',
       mobile: '9829033445',
-      address: 'C-Scheme, Ashok Nagar',
-      city: 'Jaipur',
-      state: 'Rajasthan',
+      address: 'Bara Chakia Bazar',
+      city: 'Bara Chakia',
+      state: 'Bihar',
     },
     items: [
       {
@@ -285,9 +285,26 @@ export const getShopSettings = (): ShopSettings => {
       const authorizedGmails = Array.isArray(parsed.authorizedGmails) && parsed.authorizedGmails.length > 0
         ? Array.from(new Set(['manialankar3@gmail.com', 'ayushofficial2323@gmail.com', ...parsed.authorizedGmails.map((e: string) => e.trim().toLowerCase())]))
         : ['manialankar3@gmail.com', 'ayushofficial2323@gmail.com'];
+      
+      // Auto-migrate state code to 10 (Bihar)
+      const state = (parsed.state === 'Rajasthan' || !parsed.state) ? 'Bihar' : parsed.state;
+      const stateCode = (parsed.stateCode === '08' || !parsed.stateCode) ? '10' : parsed.stateCode;
+      const city = (parsed.city === 'Jaipur' || !parsed.city) ? 'Bara Chakia' : parsed.city;
+      const address = (parsed.address?.includes('Gold Souk') || parsed.address?.includes('Sahebganj Road,')) 
+        ? 'Sahebganj Road, Bara Chakia' 
+        : (parsed.address || DEFAULT_SETTINGS.address);
+      const pincode = (parsed.pincode === '302003' || !parsed.pincode) ? '845412' : parsed.pincode;
+      const gstin = (parsed.gstin?.startsWith('08') || !parsed.gstin) ? '10ABCDE1234F1Z5' : parsed.gstin;
+
       return { 
         ...DEFAULT_SETTINGS, 
         ...parsed, 
+        state,
+        stateCode,
+        city,
+        address,
+        pincode,
+        gstin,
         authorizedGmail: 'manialankar3@gmail.com',
         authorizedGmails 
       };
@@ -310,7 +327,19 @@ export const getInvoices = (): Invoice[] => {
   try {
     const raw = localStorage.getItem(INVOICES_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed: Invoice[] = JSON.parse(raw);
+      return parsed.map(inv => {
+        if (inv.customer && (inv.customer.state === 'Rajasthan' || !inv.customer.state)) {
+          return {
+            ...inv,
+            customer: {
+              ...inv.customer,
+              state: 'Bihar'
+            }
+          };
+        }
+        return inv;
+      });
     }
     // Seed initial demo data on first load
     localStorage.setItem(INVOICES_KEY, JSON.stringify(SEED_INVOICES));
