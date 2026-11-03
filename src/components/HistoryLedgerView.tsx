@@ -41,7 +41,7 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
   onRecordPaymentClick
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | InvoiceStatus>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING_DUES' | InvoiceStatus>('ALL');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -68,7 +68,7 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
         break;
       case 'PENDING':
         setSearchTerm('');
-        setStatusFilter('PARTIAL');
+        setStatusFilter('PENDING_DUES');
         setStartDate('');
         setEndDate('');
         break;
@@ -106,8 +106,11 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
         inv.customer.mobile.includes(term) ||
         inv.customer.city.toLowerCase().includes(term);
 
-      // Status filter
-      const matchesStatus = statusFilter === 'ALL' || inv.status === statusFilter;
+      // Status filter (PENDING_DUES matches any bill with outstanding balanceDue or status in PARTIAL/UNPAID)
+      const matchesStatus = 
+        statusFilter === 'ALL' ? true :
+        statusFilter === 'PENDING_DUES' ? (inv.balanceDue > 0 || inv.status === 'PARTIAL' || inv.status === 'UNPAID') :
+        inv.status === statusFilter;
 
       // Date range
       const matchesStart = !startDate || inv.invoiceDate >= startDate;
@@ -278,7 +281,7 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
 
         <button 
           type="button"
-          className={`ledger-filter-chip ${statusFilter === 'PARTIAL' ? 'active-red' : ''}`}
+          className={`ledger-filter-chip ${statusFilter === 'PENDING_DUES' ? 'active-red' : ''}`}
           onClick={() => handleQuickFilter('PENDING')}
         >
           <Clock size={12} /> Pending Dues ({totalDueCount})
@@ -371,8 +374,9 @@ export const HistoryLedgerView: React.FC<HistoryLedgerViewProps> = ({
                 onChange={(e) => setStatusFilter(e.target.value as any)}
               >
                 <option value="ALL">All Payment Statuses</option>
+                <option value="PENDING_DUES">Pending Dues (All Partial & Unpaid)</option>
                 <option value="PAID">Fully Paid</option>
-                <option value="PARTIAL">Partially Paid (Pending)</option>
+                <option value="PARTIAL">Partially Paid</option>
                 <option value="UNPAID">Unpaid (Full Due)</option>
               </select>
             </div>

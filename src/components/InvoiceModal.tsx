@@ -302,8 +302,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   <tr>
                     <th style={{ width: '30px' }}>#</th>
                     <th>Item Description & Metal</th>
-                    <th style={{ width: '60px' }}>HSN</th>
-                    <th style={{ width: '70px' }}>Purity</th>
+                    <th style={{ width: '80px' }}>Purity</th>
                     <th style={{ width: '65px' }}>Gross Wt</th>
                     <th style={{ width: '65px' }}>Net Wt</th>
                     <th style={{ width: '75px' }}>Rate / g</th>
@@ -322,7 +321,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                           Metal: {item.metal} {item.stoneWeight > 0 ? `| Stone Wt: ${item.stoneWeight}g` : ''}
                         </div>
                       </td>
-                      <td style={{ textAlign: 'center' }}>{item.hsnCode}</td>
                       <td style={{ textAlign: 'center' }}><strong>{item.purity}</strong></td>
                       <td style={{ textAlign: 'right' }}>{formatGrams(item.grossWeight)}</td>
                       <td style={{ textAlign: 'right' }}><strong>{formatGrams(item.netWeight)}</strong></td>

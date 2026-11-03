@@ -19,25 +19,36 @@ import {
   syncRatesToCloud, 
   subscribeToCloudInvoices,
   fetchSettingsFromCloud,
-  subscribeToCloudSettings
+  subscribeToCloudSettings,
+  subscribeToAuthState,
+  signOutGoogle,
+  getCurrentAuthUser
 } from './firebase';
 
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
-import { DashboardView } from './components/DashboardView';
 import { BillingFormView } from './components/BillingFormView';
-import { HistoryLedgerView } from './components/HistoryLedgerView';
-import { RatesView } from './components/RatesView';
-import { SettingsView } from './components/SettingsView';
 import { InvoiceModal } from './components/InvoiceModal';
 import { RecordPaymentModal } from './components/RecordPaymentModal';
 import { LoginPage } from './components/LoginPage';
 
+// Code-split route components for fast startup & lightweight bundle
+const DashboardView = React.lazy(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
+const HistoryLedgerView = React.lazy(() => import('./components/HistoryLedgerView').then(m => ({ default: m.HistoryLedgerView })));
+const RatesView = React.lazy(() => import('./components/RatesView').then(m => ({ default: m.RatesView })));
+const SettingsView = React.lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
+
+const ViewLoader: React.FC = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '300px', flexDirection: 'column', gap: '0.8rem' }}>
+    <div style={{ width: '32px', height: '32px', border: '3px solid #ebdcc5', borderTopColor: '#c59b48', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+    <span style={{ fontSize: '0.82rem', color: '#886226', fontWeight: 700 }}>Loading Module...</span>
+  </div>
+);
+
 export const App: React.FC = () => {
-  // Authentication State (Restricted to authorized Gmail accounts)
-  const [currentUser, setCurrentUser] = useState<string | null>(() => {
-    return localStorage.getItem('mani_alankar_auth_user');
-  });
+  // Cryptographically verified Google User session (immune to DevTools localStorage tampering)
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'billing' | 'history' | 'rates' | 'settings'>('dashboard');
   const [settings, setSettings] = useState<ShopSettings>(() => getShopSettings());
@@ -124,6 +135,67 @@ export const App: React.FC = () => {
     }).catch(err => console.warn('Cloud settings fetch notice:', err));
   }, [currentUser]);
 
+  // Cryptographic Authentication State Guardian
+  // Prevents any Chrome DevTools / LocalStorage tampering bypass
+  useEffect(() => {
+    const unsubscribe = subscribeToAuthState(async (firebaseUser) => {
+      if (!firebaseUser || !firebaseUser.email) {
+        // No valid cryptographic Google session exists
+        localStorage.removeItem('mani_alankar_auth_user');
+        setCurrentUser(null);
+        setAuthChecking(false);
+        return;
+      }
+
+      const verifiedEmail = firebaseUser.email.toLowerCase().trim();
+
+      // Check authoritative whitelist from Cloud Settings or local fallback
+      let allowed = false;
+      try {
+        const cloudSettings = await fetchSettingsFromCloud();
+        const primaryOwnerEmail = 'manialankar3@gmail.com';
+        const allowedEmails: string[] = Array.from(new Set([
+          primaryOwnerEmail,
+          'ayushofficial2323@gmail.com',
+          ...(cloudSettings?.authorizedGmails || []),
+          cloudSettings?.authorizedGmail || '',
+          cloudSettings?.email || '',
+          ...(settings.authorizedGmails || []),
+          settings.authorizedGmail || '',
+          settings.email || ''
+        ])).map(e => e.trim().toLowerCase()).filter(Boolean);
+
+        allowed = allowedEmails.includes(verifiedEmail);
+      } catch (err) {
+        console.warn('Could not verify against cloud whitelist, checking local config:', err);
+        const allowedEmails: string[] = Array.from(new Set([
+          'manialankar3@gmail.com',
+          'ayushofficial2323@gmail.com',
+          ...(settings.authorizedGmails || []),
+          settings.authorizedGmail || '',
+          settings.email || ''
+        ])).map(e => e.trim().toLowerCase()).filter(Boolean);
+        allowed = allowedEmails.includes(verifiedEmail);
+      }
+
+      if (allowed) {
+        localStorage.setItem('mani_alankar_auth_user', verifiedEmail);
+        setCurrentUser(verifiedEmail);
+      } else {
+        console.warn(`Unauthorized Google account: ${verifiedEmail}. Revoking session.`);
+        await signOutGoogle();
+        localStorage.removeItem('mani_alankar_auth_user');
+        setCurrentUser(null);
+      }
+
+      setAuthChecking(false);
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [settings.authorizedGmails]);
+
   // Active session security: If currentUser is removed from whitelist by owner, immediately kick/logout!
   useEffect(() => {
     if (!currentUser) return;
@@ -141,13 +213,29 @@ export const App: React.FC = () => {
     }
   }, [currentUser, settings.authorizedGmails]);
 
+  // Continuous anti-tamper monitor: Terminate session if state is spoofed via DevTools
+  useEffect(() => {
+    if (currentUser) {
+      const liveUser = getCurrentAuthUser();
+      if (!liveUser || !liveUser.email || liveUser.email.toLowerCase().trim() !== currentUser.toLowerCase().trim()) {
+        console.warn('Tampering detected: React session does not match cryptographic Google token.');
+        handleLogout();
+      }
+    }
+  }, [activeTab, currentUser]);
+
   // Authentication Handlers
   const handleLoginSuccess = (email: string) => {
     localStorage.setItem('mani_alankar_auth_user', email);
     setCurrentUser(email);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOutGoogle();
+    } catch (e) {
+      console.warn('Logout notice:', e);
+    }
     localStorage.removeItem('mani_alankar_auth_user');
     setCurrentUser(null);
   };
@@ -222,6 +310,16 @@ export const App: React.FC = () => {
     setActiveTab('dashboard');
   };
 
+  // While verifying cryptographic Google session on boot
+  if (authChecking) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#220308', flexDirection: 'column', gap: '1rem', color: '#f7e7be' }}>
+        <div style={{ width: '42px', height: '42px', border: '3px solid #6b1b29', borderTopColor: '#c59b48', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <span style={{ fontSize: '0.9rem', fontWeight: 600, letterSpacing: '0.05em' }}>Verifying Authorized Session...</span>
+      </div>
+    );
+  }
+
   // If not authenticated, render restricted Login Screen
   if (!currentUser) {
     return (
@@ -266,57 +364,59 @@ export const App: React.FC = () => {
 
         {/* Dynamic Page Views */}
         <main className="main-content">
-          {activeTab === 'dashboard' && (
-            <DashboardView 
-              invoices={invoices}
-              rates={rates}
-              onNewBillClick={() => setActiveTab('billing')}
-              onViewInvoice={(inv) => {
-                setViewingInvoice(inv);
-                setIsDraftInvoice(false);
-              }}
-              onRecordPaymentClick={(inv) => setPayingInvoice(inv)}
-            />
-          )}
+          <React.Suspense fallback={<ViewLoader />}>
+            {activeTab === 'dashboard' && (
+              <DashboardView 
+                invoices={invoices}
+                rates={rates}
+                onNewBillClick={() => setActiveTab('billing')}
+                onViewInvoice={(inv) => {
+                  setViewingInvoice(inv);
+                  setIsDraftInvoice(false);
+                }}
+                onRecordPaymentClick={(inv) => setPayingInvoice(inv)}
+              />
+            )}
 
-          {activeTab === 'billing' && (
-            <BillingFormView 
-              rates={rates}
-              settings={settings}
-              existingInvoices={invoices}
-              onSaveInvoice={(inv) => handleSaveInvoice(inv, false)}
-              onPreviewDraftInvoice={(inv) => {
-                setViewingInvoice(inv);
-                setIsDraftInvoice(true);
-              }}
-            />
-          )}
+            {activeTab === 'billing' && (
+              <BillingFormView 
+                rates={rates}
+                settings={settings}
+                existingInvoices={invoices}
+                onSaveInvoice={(inv) => handleSaveInvoice(inv, false)}
+                onPreviewDraftInvoice={(inv) => {
+                  setViewingInvoice(inv);
+                  setIsDraftInvoice(true);
+                }}
+              />
+            )}
 
-          {activeTab === 'history' && (
-            <HistoryLedgerView 
-              invoices={invoices}
-              onViewInvoice={(inv) => {
-                setViewingInvoice(inv);
-                setIsDraftInvoice(false);
-              }}
-              onRecordPaymentClick={(inv) => setPayingInvoice(inv)}
-            />
-          )}
+            {activeTab === 'history' && (
+              <HistoryLedgerView 
+                invoices={invoices}
+                onViewInvoice={(inv) => {
+                  setViewingInvoice(inv);
+                  setIsDraftInvoice(false);
+                }}
+                onRecordPaymentClick={(inv) => setPayingInvoice(inv)}
+              />
+            )}
 
-          {activeTab === 'rates' && (
-            <RatesView 
-              rates={rates}
-              onUpdateRates={handleUpdateRates}
-            />
-          )}
+            {activeTab === 'rates' && (
+              <RatesView 
+                rates={rates}
+                onUpdateRates={handleUpdateRates}
+              />
+            )}
 
-          {activeTab === 'settings' && (
-            <SettingsView 
-              settings={settings}
-              onSaveSettings={handleSaveSettings}
-              onDatabaseReset={handleDatabaseReset}
-            />
-          )}
+            {activeTab === 'settings' && (
+              <SettingsView 
+                settings={settings}
+                onSaveSettings={handleSaveSettings}
+                onDatabaseReset={handleDatabaseReset}
+              />
+            )}
+          </React.Suspense>
         </main>
 
         {/* Footer */}

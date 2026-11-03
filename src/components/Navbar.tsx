@@ -42,7 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'rates':
         return { title: 'Set Metal Rates', subtitle: 'Manually configure store rates for Gold & Silver' };
       case 'settings':
-        return { title: 'Shop & GST Settings', subtitle: 'Store address, GSTIN, HSN codes & invoice print styling' };
+        return { title: 'Shop & GST Settings', subtitle: 'Store address, GSTIN & invoice print styling' };
       default:
         return { title: 'Mani Alankar Jewellers', subtitle: 'Jewellery Billing Portal' };
     }

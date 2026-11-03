@@ -1,4 +1,4 @@
-export type MetalType = 'GOLD' | 'SILVER' | 'DIAMOND' | 'PLATINUM';
+export type MetalType = 'GOLD' | 'SILVER' | 'DIAMOND' | 'PLATINUM' | 'ARTIFICIAL';
 
 export type GoldPurity = '24K' | '22K (916)' | '18K (750)' | '14K (585)';
 export type SilverPurity = 'Silver 999' | 'Silver 925 (Sterling)' | 'Silver 800';

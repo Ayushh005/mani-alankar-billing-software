@@ -20,13 +20,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   onClose,
   onPaymentSuccess
 }) => {
-  if (!invoice) return null;
-
-  const [amount, setAmount] = useState<number>(invoice.balanceDue);
+  const [amount, setAmount] = useState<number>(invoice?.balanceDue || 0);
   const [method, setMethod] = useState<PaymentMethod>('UPI');
   const [ref, setRef] = useState<string>('');
   const [notes, setNotes] = useState<string>('Customer installment / balance payment');
   const [error, setError] = useState<string>('');
+
+  if (!invoice) return null;
 
   const remainingAfterPayment = Math.max(0, invoice.balanceDue - (amount || 0));
 

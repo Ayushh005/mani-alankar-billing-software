@@ -9,7 +9,6 @@ import {
   Coins,
   ChevronRight,
   ShieldCheck,
-  Building2,
   LogOut
 } from 'lucide-react';
 import { MetalRatesSnapshot } from '../types';
@@ -142,7 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="sidebar-nav-icon">
                 <Settings size={18} />
               </div>
-              <span className="sidebar-nav-label">Shop Settings</span>
+              <span className="sidebar-nav-label">Settings</span>
               {activeTab === 'settings' && <ChevronRight size={14} className="active-arrow" />}
             </button>
 

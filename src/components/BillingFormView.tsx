@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -50,6 +50,11 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
   // Confirmation Modal state for Double Check before saving
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [pendingInvoice, setPendingInvoice] = useState<Invoice | null>(null);
+
+  // Focus and shortcut references for high-speed billing
+  const mobileInputRef = useRef<HTMLInputElement | null>(null);
+  const descriptionRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  const pendingFocusIdRef = useRef<string | null>(null);
 
   // Customer Details
   const [customerName, setCustomerName] = useState<string>('');
@@ -111,6 +116,70 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
   const [transactionRef, setTransactionRef] = useState<string>('');
   const [billNotes, setBillNotes] = useState<string>('');
 
+  // Auto-focus description field when a new item is added
+  useEffect(() => {
+    if (pendingFocusIdRef.current) {
+      const targetId = pendingFocusIdRef.current;
+      pendingFocusIdRef.current = null;
+      requestAnimationFrame(() => {
+        descriptionRefs.current[targetId]?.focus();
+      });
+    }
+  }, [items]);
+
+  // F2: Reset Bill & Focus Mobile input for new customer
+  const handleResetBill = () => {
+    setCustomerName('');
+    setCustomerMobile('');
+    setCustomerAddress('Local Market');
+    setCustomerCity(settings.city || 'Bara Chakia');
+    setCustomerState((settings.state === 'Rajasthan' || !settings.state) ? 'Bihar' : settings.state);
+    setCustomerGstin('');
+
+    const initialRate = getRateForPurity(rates, 'GOLD', '22K (916)');
+    const initialItem: Omit<InvoiceItem, 'metalValue' | 'makingChargeAmount' | 'totalItemAmount' | 'wastageAmount'> = {
+      id: `itm_${Date.now()}_1`,
+      metal: 'GOLD',
+      purity: '22K (916)',
+      description: '',
+      hsnCode: '7113',
+      grossWeight: 0,
+      netWeight: 0,
+      stoneWeight: 0,
+      ratePerGram: initialRate,
+      makingChargeType: settings.defaultMakingChargeType,
+      makingChargeValue: settings.defaultMakingChargeValue,
+      stoneCharges: 0,
+      wastagePercent: 0
+    };
+    setItems([calculateItemTotals(initialItem)]);
+
+    setHasExchange(false);
+    setExchange({
+      description: 'Old Gold Scrap Exchange',
+      metal: 'GOLD',
+      purity: '20K',
+      grossWeight: 0,
+      netWeight: 0,
+      ratePerGram: 6400,
+      meltingDeductionPercent: 2,
+      totalExchangeAmount: 0
+    });
+
+    setDiscountAmount(0);
+    setAmountPaid(0);
+    setTransactionRef('');
+    setBillNotes('');
+    setApplyGst(true);
+    setIsInterState(false);
+    setShowConfirmModal(false);
+    setPendingInvoice(null);
+
+    requestAnimationFrame(() => {
+      mobileInputRef.current?.focus();
+    });
+  };
+
   // Autocomplete customer from mobile
   const handleMobileChange = (mobile: string) => {
     setCustomerMobile(mobile);
@@ -126,13 +195,22 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
     }
   };
 
-  // Add Item to bill
+  // Add Item to bill (Alt+A or Enter on last item field)
   const handleAddItem = (metal: MetalType = 'GOLD') => {
-    const purity = metal === 'GOLD' ? '22K (916)' : metal === 'SILVER' ? 'Silver 925 (Sterling)' : '18K (750)';
+    const purity = metal === 'GOLD' 
+      ? '22K (916)' 
+      : metal === 'SILVER' 
+        ? 'Silver 925 (Sterling)' 
+        : metal === 'ARTIFICIAL'
+          ? '1 Gram Gold Plated'
+          : '18K (750)';
     const rate = getRateForPurity(rates, metal, purity);
-    const hsn = metal === 'DIAMOND' ? '7102' : '7113';
+    const hsn = metal === 'DIAMOND' ? '7102' : metal === 'ARTIFICIAL' ? '7117' : '7113';
+    const newId = `itm_${Date.now()}_${items.length + 1}`;
+    pendingFocusIdRef.current = newId;
+
     const newItemRaw: Omit<InvoiceItem, 'metalValue' | 'makingChargeAmount' | 'totalItemAmount' | 'wastageAmount'> = {
-      id: `itm_${Date.now()}_${items.length + 1}`,
+      id: newId,
       metal,
       purity,
       description: '',
@@ -141,12 +219,12 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
       netWeight: 0,
       stoneWeight: 0,
       ratePerGram: rate,
-      makingChargeType: metal === 'GOLD' ? settings.defaultMakingChargeType : 'PER_GRAM',
-      makingChargeValue: metal === 'GOLD' ? settings.defaultMakingChargeValue : 15,
+      makingChargeType: metal === 'GOLD' ? settings.defaultMakingChargeType : metal === 'ARTIFICIAL' ? 'FIXED' : 'PER_GRAM',
+      makingChargeValue: metal === 'GOLD' ? settings.defaultMakingChargeValue : metal === 'ARTIFICIAL' ? 0 : 15,
       stoneCharges: 0,
       wastagePercent: 0
     };
-    setItems([...items, calculateItemTotals(newItemRaw)]);
+    setItems(prevItems => [...prevItems, calculateItemTotals(newItemRaw)]);
   };
 
   // Update item
@@ -159,6 +237,7 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
       if (updates.metal) {
         if (updates.metal === 'DIAMOND') merged.hsnCode = '7102';
         else if (updates.metal === 'SILVER') merged.hsnCode = '7113';
+        else if (updates.metal === 'ARTIFICIAL') merged.hsnCode = '7117';
         else merged.hsnCode = '7113';
 
         if (!updates.purity) {
@@ -166,7 +245,9 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
             ? '22K (916)' 
             : updates.metal === 'SILVER' 
               ? 'Silver 925 (Sterling)' 
-              : '18K (750)';
+              : updates.metal === 'ARTIFICIAL'
+                ? '1 Gram Gold Plated'
+                : '18K (750)';
         }
       }
 
@@ -279,7 +360,12 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
 
     const sanitizedItems = items.map(it => ({
       ...it,
-      description: it.description.trim() || (it.metal === 'GOLD' ? 'Gold Ornament' : it.metal === 'SILVER' ? 'Silver Ornament' : 'Diamond Jewellery')
+      description: it.description.trim() || (
+        it.metal === 'GOLD' ? 'Gold Ornament' : 
+        it.metal === 'SILVER' ? 'Silver Ornament' : 
+        it.metal === 'ARTIFICIAL' ? 'Artificial Jewellery' : 
+        'Diamond Jewellery'
+      )
     }));
 
     return {
@@ -355,6 +441,53 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
     }
   };
 
+  // Global Counter Shortcuts (Counter Speed Boost):
+  // F2: Reset & focus on new bill.
+  // F4: Open Print / Preview draft modal.
+  // Alt + A: Add another Gold item row.
+  const handleRequestPreviewAndPrintRef = useRef(handleRequestPreviewAndPrint);
+  const handleResetBillRef = useRef(handleResetBill);
+  const handleAddItemRef = useRef(handleAddItem);
+
+  useEffect(() => {
+    handleRequestPreviewAndPrintRef.current = handleRequestPreviewAndPrint;
+    handleResetBillRef.current = handleResetBill;
+    handleAddItemRef.current = handleAddItem;
+  });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // If confirmation modal is open, avoid triggering background shortcuts
+      if (showConfirmModal) return;
+
+      // F2: Reset & focus on new bill
+      if (e.key === 'F2') {
+        e.preventDefault();
+        handleResetBillRef.current();
+        return;
+      }
+
+      // F4: Open Print / Preview draft modal
+      if (e.key === 'F4') {
+        e.preventDefault();
+        handleRequestPreviewAndPrintRef.current();
+        return;
+      }
+
+      // Alt + A: Add another Gold item row
+      if (e.altKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        handleAddItemRef.current('GOLD');
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showConfirmModal]);
+
   return (
     <div className="billing-layout-grid">
       
@@ -368,9 +501,21 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
               <User size={18} color="#3f0913" />
               1. Customer Particulars (Billed To)
             </h3>
-            <span style={{ fontSize: '0.75rem', color: '#684507', fontWeight: 600 }}>
-              Auto-fills from past ledger on 10-digit mobile
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <span style={{ fontSize: '0.75rem', color: '#684507', fontWeight: 600 }}>
+                Auto-fills on 10-digit mobile
+              </span>
+              <button
+                type="button"
+                onClick={handleResetBill}
+                title="Reset Bill & Focus Mobile (F2)"
+                className="btn-royal-outline"
+                style={{ fontSize: '0.75rem', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              >
+                <RotateCcw size={12} />
+                <span>Reset (F2)</span>
+              </button>
+            </div>
           </div>
 
           <div className="royal-card-body">
@@ -380,6 +525,7 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                   <span>Customer Mobile No *</span>
                 </label>
                 <input 
+                  ref={mobileInputRef}
                   type="tel"
                   className="form-input"
                   placeholder="10-digit mobile number"
@@ -502,7 +648,7 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                     </span>
                     <strong style={{ color: '#2b040b', fontSize: '0.95rem' }}>{item.description || 'eg. Jhumka'}</strong>
                     <span className="badge" style={{ background: '#f5ecdb', color: '#886226', border: '1px solid #d4b26f' }}>
-                      {item.metal} &bull; {item.purity} &bull; HSN {item.hsnCode}
+                      {item.metal} &bull; {item.purity}
                     </span>
                   </div>
 
@@ -529,6 +675,7 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                     >
                       <option value="GOLD">Gold</option>
                       <option value="SILVER">Silver</option>
+                      <option value="ARTIFICIAL">Artificial Jewellery</option>
                       <option value="DIAMOND">Diamond / Studded</option>
                     </select>
                   </div>
@@ -554,6 +701,16 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                           <option value="Silver 999">Silver 999 (Fine)</option>
                           <option value="Silver 800">Silver 800 (Ornaments)</option>
                         </>
+                      ) : item.metal === 'ARTIFICIAL' ? (
+                        <>
+                          <option value="1 Gram Gold Plated">1 Gram Gold Plated</option>
+                          <option value="Micro Gold Plated">Micro Gold Plated / Formed</option>
+                          <option value="Brass / Copper Base">Brass / Copper Base</option>
+                          <option value="CZ / American Diamond">CZ / American Diamond</option>
+                          <option value="Oxidised / Antique">Oxidised / Antique</option>
+                          <option value="Kundan / Meenakari">Kundan / Meenakari</option>
+                          <option value="Imitation / Fashion">Imitation / Fashion</option>
+                        </>
                       ) : (
                         <>
                           <option value="18K (750)">18K (750 Base)</option>
@@ -566,11 +723,11 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
 
                   {/* Description */}
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <label className="form-label">
                       <span>Item Description</span>
-                      <span style={{ fontSize: '0.72rem', color: '#886226', fontWeight: 700 }}>HSN: {item.hsnCode}</span>
                     </label>
                     <input
+                      ref={(el) => { descriptionRefs.current[item.id] = el; }}
                       type="text"
                       className="form-input"
                       placeholder="eg. Jhumka"
@@ -695,6 +852,12 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                       className="form-input"
                       value={item.stoneCharges || ''}
                       onChange={(e) => handleUpdateItem(item.id, { stoneCharges: Number(e.target.value) })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddItem('GOLD');
+                        }
+                      }}
                     />
                   </div>
 
@@ -722,6 +885,12 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                           const customTotal = e.target.value === '' ? 0 : Number(e.target.value);
                           handleUpdateItem(item.id, { totalItemAmount: customTotal });
                         }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddItem('GOLD');
+                          }
+                        }}
                       />
                     </div>
                   </div>
@@ -736,15 +905,28 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                 type="button" 
                 className="btn-royal-gold add-item-btn"
                 onClick={() => handleAddItem('GOLD')}
+                title="Add Gold Item (Alt+A)"
               >
-                <Plus size={16} /> + Add Gold Item / Ornament
+                <Plus size={16} />
+                <span>Add Gold Item / Ornament (Alt+A)</span>
               </button>
               <button 
                 type="button" 
                 className="btn-royal-outline add-item-btn"
                 onClick={() => handleAddItem('SILVER')}
+                title="Add Silver Item"
               >
-                <Plus size={16} /> + Add Silver Item
+                <Plus size={16} />
+                <span>Add Silver Item</span>
+              </button>
+              <button 
+                type="button" 
+                className="btn-royal-outline add-item-btn"
+                onClick={() => handleAddItem('ARTIFICIAL')}
+                title="Add Artificial Jewellery"
+              >
+                <Plus size={16} />
+                <span>Add Artificial Jewellery</span>
               </button>
             </div>
 
@@ -1124,8 +1306,9 @@ export const BillingFormView: React.FC<BillingFormViewProps> = ({
                 className="btn-royal-gold" 
                 style={{ width: '100%', fontSize: '1rem', padding: '0.85rem' }}
                 onClick={handleRequestPreviewAndPrint}
+                title="Generate & Print Draft (F4)"
               >
-                <FileCheck size={18} /> Generate & Print Invoice
+                <FileCheck size={18} /> Generate & Print Invoice (F4)
               </button>
 
               <button 

@@ -8,13 +8,18 @@ import {
   getDocs, 
   onSnapshot, 
   Firestore,
-  writeBatch
+  writeBatch,
+  query,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { 
   getAuth, 
   signInWithPopup, 
   GoogleAuthProvider, 
   signOut as fbSignOut, 
+  onAuthStateChanged,
+  User as FirebaseUser,
   Auth 
 } from 'firebase/auth';
 import { Invoice, ShopSettings, MetalRatesSnapshot } from './types';
@@ -135,6 +140,21 @@ export const signOutGoogle = async (): Promise<void> => {
   }
 };
 
+// Subscribe to authoritative Firebase Authentication state
+export const subscribeToAuthState = (
+  callback: (user: FirebaseUser | null) => void
+): (() => void) | null => {
+  const { auth } = getFirebaseInstance();
+  if (!auth) return null;
+  return onAuthStateChanged(auth, callback);
+};
+
+// Check current authoritative Firebase Auth user
+export const getCurrentAuthUser = (): FirebaseUser | null => {
+  const { auth } = getFirebaseInstance();
+  return auth ? auth.currentUser : null;
+};
+
 // ==========================================
 // FIRESTORE CLOUD DATA SYNC HELPERS
 // ==========================================
@@ -200,22 +220,24 @@ export const fetchInvoicesFromCloud = async (): Promise<Invoice[] | null> => {
   }
 };
 
-// 4. Real-time Invoices Subscription (Sorted descending by date)
+// 4. Real-time Invoices Subscription (Performance optimized with limit)
 export const subscribeToCloudInvoices = (
-  onData: (invoices: Invoice[]) => void
+  onData: (invoices: Invoice[]) => void,
+  maxResults: number = 60
 ): (() => void) | null => {
   const { db } = getFirebaseInstance();
   if (!db) return null;
 
   try {
     const colRef = collection(db, 'invoices');
-    const unsubscribe = onSnapshot(colRef, (snapshot) => {
+    // Paginated/Limited query to protect read quota and memory
+    const q = query(colRef, orderBy('createdAt', 'desc'), limit(maxResults));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: Invoice[] = [];
       snapshot.forEach(docSnap => {
         list.push(docSnap.data() as Invoice);
       });
       if (list.length > 0) {
-        // Sort chronological descending (latest first)
         list.sort((a, b) => {
           const timeA = new Date(a.createdAt || a.invoiceDate).getTime() || 0;
           const timeB = new Date(b.createdAt || b.invoiceDate).getTime() || 0;
@@ -224,7 +246,18 @@ export const subscribeToCloudInvoices = (
         onData(list);
       }
     }, (err) => {
-      console.warn('Real-time invoices snapshot error:', err);
+      console.warn('Real-time query snapshot notice (fallback):', err);
+      try {
+        onSnapshot(colRef, (baseSnap) => {
+          const baseList: Invoice[] = [];
+          baseSnap.forEach(docSnap => {
+            baseList.push(docSnap.data() as Invoice);
+          });
+          onData(baseList);
+        });
+      } catch (fallbackErr) {
+        console.warn('Fallback invoice query error:', fallbackErr);
+      }
     });
     return unsubscribe;
   } catch (err) {
